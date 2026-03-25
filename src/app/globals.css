@@ -1,0 +1,131 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300;1,9..40,400&family=DM+Serif+Display:ital@0;1&display=swap');
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════
+   ZEAL — Warm Organic Premium Theme V1
+   Sand & charcoal · Amber accent · DTC-grade whitespace
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── BACKGROUNDS ─────────────────────────────────────────── */
+  --bg:              #FDFCFA;
+  --bg-secondary:    #F6F3EE;
+  --bg-tertiary:     #EDE9E1;
+  --surface:         #FFFFFF;
+
+  /* ── ACCENT — Warm Amber ─────────────────────────────────── */
+  --accent:          #C8831A;
+  --accent-hover:    #A96B10;
+  --accent-dark:     #7A4D08;
+  --accent-light:    #FDF3E3;
+  --accent-mid:      #F5D49A;
+  --accent-border:   #F0C070;
+
+  /* ── BORDERS ─────────────────────────────────────────────── */
+  --border:          #E2DDD6;
+  --border-light:    #EDE9E1;
+  --border-strong:   #C8BFB2;
+  --border-focus:    #C8831A;
+
+  /* ── TEXT ────────────────────────────────────────────────── */
+  --text:            #1A1714;
+  --text-secondary:  #3D3830;
+  --text-muted:      #7A7168;
+  --text-subtle:     #A8A09A;
+  --text-disabled:   #CEC7BF;
+  --text-inverse:    #FDFCFA;
+
+  /* ── SEMANTIC ────────────────────────────────────────────── */
+  --success:         #2D7A4F;
+  --success-bg:      #EDF7F2;
+  --success-border:  #9FD4B8;
+  --error:           #B93636;
+  --error-bg:        #FDF2F2;
+  --error-border:    #F0B4B4;
+  --warning:         #C8831A;
+  --warning-bg:      #FDF3E3;
+  --warning-border:  #F0C070;
+
+  /* ── PRICE ───────────────────────────────────────────────── */
+  --price:           #1A1714;
+  --price-sale:      #B93636;
+  --price-original:  #A8A09A;
+
+  /* ── TYPOGRAPHY ──────────────────────────────────────────── */
+  --font-display:    'DM Serif Display', Georgia, serif;
+  --font-body:       'DM Sans', system-ui, sans-serif;
+
+  /* ── SHADOWS ─────────────────────────────────────────────── */
+  --shadow-xs:    0 1px 2px rgba(26,23,20,0.06);
+  --shadow-sm:    0 1px 4px rgba(26,23,20,0.08), 0 1px 2px rgba(26,23,20,0.04);
+  --shadow-md:    0 4px 16px rgba(26,23,20,0.08), 0 2px 4px rgba(26,23,20,0.04);
+  --shadow-card:  0 1px 3px rgba(26,23,20,0.07), 0 0 0 1px rgba(26,23,20,0.05);
+  --shadow-card-hover: 0 8px 28px rgba(26,23,20,0.11), 0 0 0 1px rgba(26,23,20,0.07);
+  --shadow-accent: 0 4px 14px rgba(200,131,26,0.30);
+  --shadow-nav:   0 1px 0 rgba(26,23,20,0.07);
+  --shadow-panel: -4px 0 40px rgba(26,23,20,0.10), 0 0 0 1px rgba(26,23,20,0.06);
+  --shadow-modal: 0 24px 64px rgba(26,23,20,0.16), 0 8px 24px rgba(26,23,20,0.08);
+
+  /* ── RADII ───────────────────────────────────────────────── */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-2xl:  22px;
+  --radius-full: 9999px;
+
+  /* ── EASING ──────────────────────────────────────────────── */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── GLOBAL BASE ──────────────────────────────────────────────── */
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── SCROLLBAR ────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── ANIMATIONS ───────────────────────────────────────────────── */
+@keyframes dot-pulse {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50%       { opacity: 1;   transform: scale(1.1); }
+}
+
+@keyframes zealFadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes zealSlideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes zealPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+/* ── FOCUS RING ───────────────────────────────────────────────── */
+.zl-focus:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(200,131,26,0.25);
+}
+
+/* ── DIVIDER ──────────────────────────────────────────────────── */
+.zl-divider {
+  height: 1px;
+  background: var(--border);
+}
