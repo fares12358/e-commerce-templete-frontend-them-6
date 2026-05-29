@@ -29,8 +29,18 @@ export const updatePassword = async (payload) => {
 };
 
 /* ================= public data ================= */
+
+// Legacy — full init in one shot (used by non-homepage pages)
 export const getSetupData = async () => api.get('/data');
+
+// Phase 1 — shell: config · content · categories · ads  (fast)
+export const getShellData = async () => api.get('/data/shell');
+
+// Phase 2 — products: featuredProducts · newProducts  (heavier, deferred)
+export const getHomepageProducts = async () => api.get('/data/products');
+
 export const sendContact = async (data) => api.post('/contact', data);
+
 export const getProducts = async ({
     page = 1,
     limit = 20,
@@ -38,15 +48,13 @@ export const getProducts = async ({
     sort,
     type
   }) => {
-  
     const params = { page, limit };
-  
     if (categoryId) params.categoryId = categoryId;
     if (sort) params.sort = sort;
     if (type) params.type = type;
-  
     return await api.get("/products", { params });
   };
+
 /* ================= user cart ================= */
 
 export const addToCart = async (data) => api.post('/cart/add', data);
@@ -61,7 +69,7 @@ export const addLocation = async (data) => api.post('/users/location', data);
 export const deleteLocation = (id) => api.delete(`/users/location/${id}`);
 export const setDefaultLocation = (id) => api.patch(`/users/location/${id}/default`);
 
-/* ================= user location ================= */
+/* ================= orders ================= */
 export const getOrders = async (params = {}) => {
     const cleanParams = {}
     Object.entries(params).forEach(([key, value]) => {
@@ -72,12 +80,17 @@ export const getOrders = async (params = {}) => {
     return api.get("/orders/my", { params: cleanParams });
 };
 
-/* ================= orders ================= */
 export const createOrders = async (data) => api.post('/orders', data);
 export const cancelOrder = async (id) => api.patch(`/orders/${id}`);
 export const getOrderById = (id) => api.get(`/orders/my/${id}`);
+
+/* ================= refund [v1.0.4] ================= */
+// User submits a refund request on a delivered order
+export const requestRefund = (id, payload) =>
+    api.post(`/orders/${id}/refund`, payload);
+
 /* ================= products ================= */
-export const getProductByID = async (id) => api.get(`/products/details/${id}`,);
+export const getProductByID = async (id) => api.get(`/products/details/${id}`);
 
 export const getProductsByCat = (catId, params = {}) => {
     const cleanParams = {}
@@ -93,10 +106,8 @@ export const getProductsByCat = (catId, params = {}) => {
 export const getInvoice = (id) => api.get(`/orders/invoice/${id}`)
 
 /* ================= search ================= */
-// 🔍 suggest أثناء الكتابة
 export const suggestProducts = (q, signal) =>
     api.get(`/products/suggest?q=${encodeURIComponent(q)}`, { signal });
 
-// 🔎 صفحة النتائج
 export const searchProducts = (q, page = 1) =>
     api.get(`/products/search?q=${encodeURIComponent(q)}&page=${page}`);

@@ -1,14 +1,17 @@
 // ═══════════════════════════════════════════════════════════════
-// OrderDetailsPage.jsx — ZEAL Theme
+// OrderDetailsPage.jsx — ZEAL Theme  (v1.0.4: refund request)
 // ═══════════════════════════════════════════════════════════════
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
-import { getOrderById, cancelOrder, getInvoice } from "@/lib/api";
+import { getOrderById, cancelOrder, getInvoice, requestRefund } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { motion } from "framer-motion";
-import { FaCheckCircle, FaCog, FaTruck, FaBox, FaMapMarkerAlt, FaWallet, FaPrint, FaBoxOpen, FaTimes } from "react-icons/fa";
+import {
+  FaCheckCircle, FaCog, FaTruck, FaBox, FaMapMarkerAlt,
+  FaWallet, FaPrint, FaBoxOpen, FaTimes, FaUndo,
+} from "react-icons/fa";
 import Link from "next/link";
 import Loader from "@/Components/Loader";
 import ConfirmModal from "@/Components/ConfirmModal";
@@ -19,13 +22,25 @@ const steps = [
   { key: "shipped",    label: "تم الشحن",    icon: FaTruck       },
   { key: "delivered",  label: "تم التوصيل", icon: FaBox         },
 ];
-const statusToStep = { pending: "ordered", confirmed: "processing", shipped: "shipped", delivered: "delivered", cancelled: "ordered" };
+const statusToStep = {
+  pending: "ordered", confirmed: "processing",
+  shipped: "shipped", delivered: "delivered", cancelled: "ordered",
+};
 const statusStyles = {
   pending:   { bg: "var(--warning-bg)",   border: "var(--warning-border)",  text: "var(--warning)",  label: "قيد الانتظار" },
   confirmed: { bg: "var(--bg-secondary)", border: "var(--border)",          text: "var(--text-secondary)", label: "تم التأكيد" },
   shipped:   { bg: "var(--accent-light)", border: "var(--accent-border)",   text: "var(--accent)",   label: "تم الشحن"     },
   delivered: { bg: "var(--success-bg)",   border: "var(--success-border)",  text: "var(--success)",  label: "تم التوصيل"  },
   cancelled: { bg: "var(--error-bg)",     border: "var(--error-border)",    text: "var(--error)",    label: "تم الإلغاء"   },
+};
+
+/* Refund status badge colours — all 5 states [v1.0.5] */
+const refundMeta = {
+  requested:        { bg: "var(--warning-bg)",  border: "var(--warning-border)",  text: "var(--warning)",  label: "طلب استرداد قيد المراجعة"   },
+  approved:         { bg: "var(--accent-light)", border: "var(--accent-border)",   text: "var(--accent)",   label: "تمت الموافقة - أعد المنتج"    },
+  product_received: { bg: "#ede9fe",            border: "#c4b5fd",               text: "#6d28d9",         label: "تم استلام المنتج - سيتم رد المبلغ" },
+  money_refunded:   { bg: "var(--success-bg)",  border: "var(--success-border)",  text: "var(--success)",  label: "تم رد المبلغ ✓"          },
+  rejected:         { bg: "var(--error-bg)",    border: "var(--error-border)",    text: "var(--error)",    label: "تم رفض طلب الاسترداد"       },
 };
 
 function Timeline({ current, status }) {
@@ -52,8 +67,10 @@ function Timeline({ current, status }) {
           const Icon = step.icon;
           return (
             <div key={step.key} className="flex md:flex-col items-center gap-3 flex-1 relative">
-              {!isLast && <div className="hidden md:block absolute top-4 right-1/2 w-full h-[2px] -z-0 transition-colors duration-300"
-                style={{ background: isActive ? "var(--accent)" : "var(--border)" }} />}
+              {!isLast && (
+                <div className="hidden md:block absolute top-4 right-1/2 w-full h-[2px] -z-0 transition-colors duration-300"
+                  style={{ background: isActive ? "var(--accent)" : "var(--border)" }} />
+              )}
               <div className="relative z-10 w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all duration-300 shrink-0"
                 style={isActive
                   ? { borderColor: "var(--accent)", background: "var(--accent)", color: "#fff" }
@@ -72,43 +89,92 @@ function Timeline({ current, status }) {
 }
 
 export default function OrderDetailsPage() {
-  // ── LOGIC UNTOUCHED ─────────────────────────────────────────
-  const { id } = useParams(); const router = useRouter();
-  const { orders, setOrders, user, simple } = useAuth();
-  const [order, setOrder] = useState(null), [loading, setLoading] = useState(false);
-  const [cancelLoading, setCancelLoading] = useState(false);
+  // ── LOGIC ─────────────────────────────────────────────────────
+  const { id } = useParams();
+  const router  = useRouter();
+  const { orders, setOrders, user, simple, setupData } = useAuth();
+  const [order,          setOrder]          = useState(null);
+  const [loading,        setLoading]        = useState(false);
+  const [cancelLoading]                     = useState(false);
+  const [invoceLoading,  setInvoceLoading]  = useState(false);
+  const [modalOpen,      setModalOpen]      = useState(false);
+  const [actionLoading,  setActionLoading]  = useState(false);
+
+  /* [v1.0.4] Refund state */
+  const [refundModalOpen,  setRefundModalOpen]  = useState(false);
+  const [refundReason,     setRefundReason]     = useState("");
+  const [refundLoading,    setRefundLoading]    = useState(false);
+
   const currentStatus = statusToStep[order?.status] || "ordered";
-  const [invoceLoading, setInvoceLoading] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false), [actionLoading, setActionLoading] = useState(false);
 
   const fetchOrder = async () => {
-    try { setLoading(true); const res = await getOrderById(id); setOrder(res.data); }
-    catch (err) { toast.error(err.message); router.push("/myOrders"); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const res = await getOrderById(id);
+      setOrder(res.data);
+    } catch (err) {
+      toast.error(err.message);
+      router.push("/myOrders");
+    } finally {
+      setLoading(false);
+    }
   };
+
   useEffect(() => { if (id) fetchOrder(); }, [id, orders]);
 
   const handleConfirmCancel = async () => {
     try {
-      setActionLoading(true); await cancelOrder(order._id);
+      setActionLoading(true);
+      await cancelOrder(order._id);
       setOrder(prev => ({ ...prev, status: "cancelled" }));
-      setOrders(prev => { const u = {}; for (const key in prev) { u[key] = prev[key].map(o => o._id === id ? { ...o, status: "cancelled" } : o); } return u; });
-      toast.success("تم إلغاء الطلب بنجاح"); setModalOpen(false);
-    } catch { toast.error("فشل إلغاء الطلب"); } finally { setActionLoading(false); }
+      setOrders(prev => {
+        const u = {};
+        for (const key in prev) {
+          u[key] = prev[key].map(o => o._id === id ? { ...o, status: "cancelled" } : o);
+        }
+        return u;
+      });
+      toast.success("تم إلغاء الطلب بنجاح");
+      setModalOpen(false);
+    } catch { toast.error("فشل إلغاء الطلب"); }
+    finally { setActionLoading(false); }
   };
 
   const HandlegetInvoice = async () => {
-    try { setInvoceLoading(true); const res = await getInvoice(id); if (res.seuccess) toast.success(res.message); }
-    catch (err) { toast.error(err.message); } finally { setInvoceLoading(false); }
+    try {
+      setInvoceLoading(true);
+      const res = await getInvoice(id);
+      if (res.success) toast.success(res.message);
+    } catch (err) { toast.error(err.message); }
+    finally { setInvoceLoading(false); }
+  };
+
+  /* [v1.0.4] Submit refund request */
+  const handleSubmitRefund = async () => {
+    if (!refundReason.trim()) return toast.error("يرجى كتابة سبب طلب الاسترداد");
+    try {
+      setRefundLoading(true);
+      const res = await requestRefund(order._id, { reason: refundReason.trim() });
+      if (res.success) {
+        toast.success(res.message);
+        setRefundModalOpen(false);
+        setRefundReason("");
+        // Refresh local order so refund badge appears
+        fetchOrder();
+      }
+    } catch (err) { toast.error(err.message); }
+    finally { setRefundLoading(false); }
   };
 
   useEffect(() => { if (!user) router.push('/'); }, [user]);
-  // ── END LOGIC ────────────────────────────────────────────────
+  // ── END LOGIC ─────────────────────────────────────────────────
 
   if (loading) return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center gap-3" style={{ background: "var(--bg)" }}>
       <Loader size={32} color="var(--accent)" />
     </div>
   );
+
   if (!order) return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center gap-4" style={{ background: "var(--bg)" }}>
       <div className="w-14 h-14 rounded-[var(--radius-lg)] flex items-center justify-center border"
@@ -120,6 +186,15 @@ export default function OrderDetailsPage() {
   );
 
   const s = statusStyles[order.status] || statusStyles.pending;
+
+  /* [v1.0.4] Determine if "Request Refund" button should show:
+     - order is delivered
+     - refund feature flag is ON  (setupData.config.refundEnabled — injected by shell endpoint)
+     - refund.status is 'none'    (no existing request yet) */
+  const refundEnabled    = setupData?.config?.refundEnabled === true;
+  const refundStatus     = order.refund?.status || "none";
+  const canRequestRefund = order.status === "delivered" && refundEnabled && refundStatus === "none";
+  const existingRefund   = refundStatus !== "none" ? refundMeta[refundStatus] : null;
 
   return (
     <main dir="rtl" className="min-h-screen" style={{ background: "var(--bg)" }}>
@@ -143,6 +218,29 @@ export default function OrderDetailsPage() {
             </div>
           </div>
         </div>
+
+        {/* [v1.0.4] Refund status badge — shown if a refund exists */}
+        {existingRefund && (
+          <div className="flex items-start gap-3 rounded-[var(--radius-lg)] border p-4"
+            style={{ background: existingRefund.bg, borderColor: existingRefund.border }}>
+            <FaUndo size={13} style={{ color: existingRefund.text, marginTop: 2, flexShrink: 0 }} />
+            <div>
+              <p className="text-[13px] font-semibold" style={{ color: existingRefund.text }}>
+                {existingRefund.label}
+              </p>
+              {order.refund?.reason && (
+                <p className="text-[12px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  السبب: {order.refund.reason}
+                </p>
+              )}
+              {order.refund?.adminNote && (
+                <p className="text-[12px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  ملاحظة الإدارة: {order.refund.adminNote}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         <Timeline current={currentStatus} status={order.status} />
 
@@ -224,7 +322,7 @@ export default function OrderDetailsPage() {
           </div>
         </div>
 
-        {/* Summary */}
+        {/* Summary + actions */}
         <div className="rounded-[var(--radius-lg)] border overflow-hidden"
           style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}>
           <div className="h-[3px]" style={{ background: "var(--accent)" }} />
@@ -244,6 +342,8 @@ export default function OrderDetailsPage() {
                 {order.totalPrice.toLocaleString()} {simple}
               </span>
             </div>
+
+            {/* Action buttons */}
             <div className="flex flex-col sm:flex-row gap-2.5 pt-2 mt-1" style={{ borderTop: "1px solid var(--border)" }}>
               {order.status !== "cancelled" && (
                 <button onClick={HandlegetInvoice} disabled={invoceLoading}
@@ -252,11 +352,22 @@ export default function OrderDetailsPage() {
                   {invoceLoading ? <Loader size={16} color="#fff" /> : <><FaPrint size={11} /> طلب الفاتورة</>}
                 </button>
               )}
+
               {order.status === "pending" && (
                 <button onClick={() => setModalOpen(true)} disabled={cancelLoading}
                   className="flex-1 py-2 flex items-center justify-center gap-2 text-[13px] font-semibold rounded-[var(--radius-md)] border transition-all duration-150 cursor-pointer"
                   style={{ background: "var(--surface)", color: "var(--error)", borderColor: "var(--error-border)" }}>
                   <FaTimes size={10} /> إلغاء الطلب
+                </button>
+              )}
+
+              {/* [v1.0.4] Refund request button */}
+              {canRequestRefund && (
+                <button
+                  onClick={() => setRefundModalOpen(true)}
+                  className="flex-1 py-2 flex items-center justify-center gap-2 text-[13px] font-semibold rounded-[var(--radius-md)] border transition-all duration-150 cursor-pointer"
+                  style={{ background: "var(--surface)", color: "var(--warning)", borderColor: "var(--warning-border)" }}>
+                  <FaUndo size={10} /> طلب استرداد
                 </button>
               )}
             </div>
@@ -270,12 +381,78 @@ export default function OrderDetailsPage() {
         </p>
       </div>
 
+      {/* Cancel modal */}
       <ConfirmModal open={modalOpen} loading={actionLoading}
         onCancel={() => { if (!actionLoading) setModalOpen(false); }}
         onConfirm={handleConfirmCancel}
         icon={<FaTimes size={24} style={{ color: "var(--error)" }} />}
         title="إلغاء الطلب"
         message="هل أنت متأكد من إلغاء هذا الطلب؟ لا يمكن التراجع بعد ذلك." />
+
+      {/* [v1.0.4] Refund request modal */}
+      {refundModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(26,23,20,0.45)", backdropFilter: "blur(4px)" }}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0, y: 8 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="w-full max-w-sm rounded-[var(--radius-xl)] p-6"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 24px 48px rgba(0,0,0,0.15)" }}
+            dir="rtl"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-[var(--radius-md)] flex items-center justify-center shrink-0"
+                style={{ background: "var(--warning-bg)", border: "1px solid var(--warning-border)" }}>
+                <FaUndo size={14} style={{ color: "var(--warning)" }} />
+              </div>
+              <div>
+                <h3 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>طلب استرداد</h3>
+                <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>الطلب #{order.orderNumber}</p>
+              </div>
+            </div>
+
+            <p className="text-[13px] mb-3" style={{ color: "var(--text-muted)" }}>
+              يرجى كتابة سبب طلب الاسترداد بالتفصيل لمساعدتنا في معالجة طلبك بسرعة.
+            </p>
+
+            <textarea
+              className="w-full rounded-[var(--radius-md)] border px-3 py-2.5 text-[13px] outline-none resize-none transition-all duration-150"
+              rows={4}
+              placeholder="مثال: المنتج وصل تالفاً / المنتج لا يطابق الوصف..."
+              value={refundReason}
+              onChange={e => setRefundReason(e.target.value)}
+              style={{
+                borderColor: "var(--border)",
+                background: "var(--bg)",
+                color: "var(--text)",
+              }}
+              onFocus={e => e.target.style.borderColor = "var(--accent)"}
+              onBlur={e => e.target.style.borderColor = "var(--border)"}
+            />
+
+            <div className="flex gap-2.5 mt-4">
+              <button
+                onClick={handleSubmitRefund}
+                disabled={refundLoading || !refundReason.trim()}
+                className="flex-1 h-10 flex items-center justify-center gap-2 text-[13px] font-semibold rounded-[var(--radius-md)] border-none transition-all duration-150 cursor-pointer disabled:opacity-50"
+                style={{ background: "var(--accent)", color: "#fff" }}>
+                {refundLoading ? <Loader size={16} color="#fff" /> : <><FaUndo size={10} /> إرسال الطلب</>}
+              </button>
+              <button
+                onClick={() => { setRefundModalOpen(false); setRefundReason(""); }}
+                disabled={refundLoading}
+                className="flex-1 h-10 flex items-center justify-center text-[13px] font-medium rounded-[var(--radius-md)] cursor-pointer border transition-all duration-150 disabled:opacity-50"
+                style={{ background: "var(--surface)", color: "var(--text-muted)", borderColor: "var(--border)" }}>
+                إلغاء
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </main>
   );
 }

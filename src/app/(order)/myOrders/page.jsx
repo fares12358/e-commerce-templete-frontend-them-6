@@ -4,7 +4,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { FaSearch, FaChevronLeft, FaChevronRight, FaBoxOpen, FaTimes } from "react-icons/fa";
+import { FaSearch, FaChevronLeft, FaChevronRight, FaBoxOpen, FaTimes, FaUndo } from "react-icons/fa";
 import { getOrders } from "@/lib/api";
 import { toast } from "react-toastify";
 import CustomSelect from "@/Components/CustomSelect";
@@ -23,12 +23,18 @@ const statusStyles = {
 };
 
 const statusOptions = [
-  { value: "all",       label: "كل الطلبات"   },
-  { value: "pending",   label: "قيد الانتظار" },
-  { value: "confirmed", label: "قيد التجهيز"  },
-  { value: "shipped",   label: "تم الشحن"     },
-  { value: "delivered", label: "تم التوصيل"   },
-  { value: "cancelled", label: "تم الإلغاء"   },
+  { value: "all",              label: "كل الطلبات"             },
+  { value: "pending",          label: "قيد الانتظار"         },
+  { value: "confirmed",        label: "قيد التجهيز"          },
+  { value: "shipped",          label: "تم الشحن"             },
+  { value: "delivered",        label: "تم التوصيل"           },
+  { value: "cancelled",        label: "تم الإلغاء"           },
+  /* [v1.0.5] refund sub-filters — full 5-step lifecycle */
+  { value: "refund_requested",        label: "استرداد قيد المراجعة"         },
+  { value: "refund_approved",          label: "استرداد موافق - أعد المنتج"      },
+  { value: "refund_product_received",  label: "تم استلام المنتج"           },
+  { value: "refund_money_refunded",    label: "تم رد المبلغ ✓"               },
+  { value: "refund_rejected",          label: "استرداد مرفوض"                },
 ];
 
 const sortOptions = [
@@ -36,13 +42,23 @@ const sortOptions = [
   { value: "old", label: "الأقدم أولاً" },
 ];
 
+/* [v1.0.5] Refund badge colours — all 5 states */
+const refundBadgeStyle = {
+  requested:        { bg: "var(--warning-bg)",  border: "var(--warning-border)",  text: "var(--warning)",  label: "استرداد قيد المراجعة"         },
+  approved:         { bg: "var(--accent-light)", border: "var(--accent-border)",  text: "var(--accent)",   label: "موافق - أعد المنتج"           },
+  product_received: { bg: "#ede9fe",            border: "#c4b5fd",              text: "#6d28d9",         label: "تم استلام المنتج"              },
+  money_refunded:   { bg: "var(--success-bg)",  border: "var(--success-border)", text: "var(--success)",  label: "تم رد المبلغ ✓"                },
+  rejected:         { bg: "var(--error-bg)",    border: "var(--error-border)",   text: "var(--error)",    label: "استرداد مرفوض"                 },
+};
+
 // ── ORDER CARD ───────────────────────────────────────────────
 function OrderCard({ order, simple }) {
-  const { orderNumber, status, createdAt, items, totalPrice, paymentMethod, _id } = order;
+  const { orderNumber, status, createdAt, items, totalPrice, paymentMethod, _id, refund } = order;
   const formatDate = (date) =>
     new Date(date).toLocaleDateString("ar-EG", { year: "numeric", month: "long", day: "numeric" });
-  const totalItems = items?.reduce((acc, item) => acc + item.quantity, 0);
-  const s = statusStyles[status] || statusStyles.pending;
+  const totalItems  = items?.reduce((acc, item) => acc + item.quantity, 0);
+  const s           = statusStyles[status] || statusStyles.pending;
+  const refundStyle = refund?.status && refund.status !== "none" ? refundBadgeStyle[refund.status] : null;
 
   return (
     <motion.div
@@ -62,10 +78,19 @@ function OrderCard({ order, simple }) {
             #{orderNumber}
           </h2>
         </div>
-        <span className="inline-flex items-center text-[11px] font-semibold px-3 py-1.5 rounded-[var(--radius-full)] border"
-          style={{ background: s.bg, borderColor: s.border, color: s.text }}>
-          {s.label}
-        </span>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* [v1.0.4] Refund status badge */}
+          {refundStyle && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-[var(--radius-full)] border"
+              style={{ background: refundStyle.bg, borderColor: refundStyle.border, color: refundStyle.text }}>
+              <FaUndo size={9} />{refundStyle.label}
+            </span>
+          )}
+          <span className="inline-flex items-center text-[11px] font-semibold px-3 py-1.5 rounded-[var(--radius-full)] border"
+            style={{ background: s.bg, borderColor: s.border, color: s.text }}>
+            {s.label}
+          </span>
+        </div>
       </div>
 
       {/* Card body */}
@@ -124,9 +149,18 @@ export default function MyOrdersPage() {
       const cacheKey = `${filter}_${sort}_${page}_${search}`;
       if (orders[cacheKey]) return;
       setLoading(true);
+
       const params = { page, sort };
-      if (filter !== "all") params.status = filter;
+
+      // [v1.0.4] refund sub-filters send refundStatus; all others send status
+      if (filter.startsWith("refund_")) {
+        params.refundStatus = filter.replace("refund_", ""); // e.g. "requested"
+      } else if (filter !== "all") {
+        params.status = filter;
+      }
+
       if (search) params.orderNumber = search;
+
       const res = await getOrders(params);
       setOrders(prev => ({ ...prev, [cacheKey]: res.data }));
       setTotalPages(res.pagination.totalPages);

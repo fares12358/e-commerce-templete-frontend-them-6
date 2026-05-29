@@ -8,24 +8,40 @@ import Loader from "./Loader";
 import { useAuth } from "@/context/AuthContext";
 
 export default function CartSidePanel({ selections, id, name, stock, price, image, open, comparePrice, onClose }) {
-  // ── LOGIC UNTOUCHED ─────────────────────────────────────────
-  const { simple, user } = useAuth();
+  // ── LOGIC ─────────────────────────────────────────
+  const { simple, user, fetchCart } = useAuth();
   const [quantity, setQuantity] = useState(1);
   const [selected, setSelected] = useState({});
   const [loading, setLoading] = useState(false);
+
   const handleSelect = (name, value) => setSelected(prev => ({ ...prev, [name]: value }));
+
   const handleAdd = async () => {
     if (!user) return;
     if (quantity > stock) { toast.error("الكمية غير متاحة"); return; }
-    if (selections?.length) { for (const sel of selections) { if (!selected[sel.name]) { toast.error(`اختر ${sel.name} أولاً`); return; } } }
+    if (selections?.length) {
+      for (const sel of selections) {
+        if (!selected[sel.name]) { toast.error(`اختر ${sel.name} أولاً`); return; }
+      }
+    }
     const selectionsPayload = Object.entries(selected).map(([name, value]) => ({ name, value }));
     try {
       setLoading(true);
       const res = await addToCart({ productId: id, quantity, selections: selectionsPayload });
-      if (res.success) { toast.success("تمت إضافة المنتج إلى الحقيبة 🛍️"); onClose(); }
-      else toast.error(res.data.message);
-    } catch { toast.error("حدث خطأ أثناء الإضافة"); }
-    finally { setLoading(false); }
+      if (res.success) {
+        toast.success("تمت إضافة المنتج إلى الحقيبة 🛍️");
+        // Refresh cart in context so navbar badge updates immediately
+        // without requiring the user to navigate to the cart page
+        fetchCart();
+        onClose();
+      } else {
+        toast.error(res.message);
+      }
+    } catch {
+      toast.error("حدث خطأ أثناء الإضافة");
+    } finally {
+      setLoading(false);
+    }
   };
   // ── END LOGIC ────────────────────────────────────────────────
 
@@ -129,7 +145,11 @@ export default function CartSidePanel({ selections, id, name, stock, price, imag
                   <label className="block text-[11px] font-semibold tracking-[0.08em] uppercase mb-2.5"
                     style={{ color: "var(--text-muted)" }}>
                     {sel.name}
-                    {selected[sel.name] && <span className="normal-case tracking-normal font-normal mr-1.5" style={{ color: "var(--text-subtle)" }}>— {selected[sel.name]}</span>}
+                    {selected[sel.name] && (
+                      <span className="normal-case tracking-normal font-normal mr-1.5" style={{ color: "var(--text-subtle)" }}>
+                        — {selected[sel.name]}
+                      </span>
+                    )}
                   </label>
                   <div className="flex flex-wrap gap-2">
                     {sel.options.map(opt => {

@@ -4,48 +4,155 @@ import { FaPlus, FaMinus, FaTrash, FaBoxOpen, FaShoppingBag } from "react-icons/
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { getCart, updateCart, removeCart, clearCart } from "@/lib/api";
+import { updateCart, removeCart, clearCart } from "@/lib/api";
 import { toast } from "react-toastify";
 import Loader from "@/Components/Loader";
 import ConfirmModal from "@/Components/ConfirmModal";
 import Link from "next/link";
 
 export default function CartPage() {
-  // ── LOGIC UNTOUCHED ─────────────────────────────────────────
+  // ── LOGIC ─────────────────────────────────────────────────────
   const router = useRouter();
-  const { user, cart, setCart, setupData, simple } = useAuth();
-  const [clearing, setClearing] = useState(false); const [loadingItem, setLoadingItem] = useState(false);
-  const [loadingQnty, setLoadingQnty] = useState(false); const [viewConfirm, setviewConfirm] = useState(false);
-  const [confirmType, setConfirmType] = useState(null); const [targetId, setTargetId] = useState(null);
-  const [pendingQty, setPendingQty] = useState({}); const [hasChanges, setHasChanges] = useState(false);
-  const [deleting, setDeleting] = useState(false); const [loading, setLoading] = useState(false);
+  const {
+    user,
+    cart, setCart,
+    setupData,
+    simple,
+    cartLoaded,
+    fetchCart: fetchCartCtx,
+  } = useAuth();
 
-  const inc = (itemId, stock) => { setPendingQty(prev => { if (prev[itemId] >= stock) return prev; const updated = { ...prev, [itemId]: prev[itemId] + 1 }; setHasChanges(true); return updated; }); };
-  const dec = (itemId) => { setPendingQty(prev => { if (prev[itemId] <= 1) return prev; const updated = { ...prev, [itemId]: prev[itemId] - 1 }; setHasChanges(true); return updated; }); };
+  const [clearing, setClearing] = useState(false);
+  const [loadingItem, setLoadingItem] = useState(null);
+  const [loadingQnty] = useState(false);
+  const [viewConfirm, setviewConfirm] = useState(false);
+  const [confirmType, setConfirmType] = useState(null);
+  const [targetId, setTargetId] = useState(null);
+  const [pendingQty, setPendingQty] = useState({});
+  const [hasChanges, setHasChanges] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // pageLoading: true only on the FIRST visit (cartLoaded === false)
+  // Shows the full-screen spinner until initial data arrives.
+  const [pageLoading, setPageLoading] = useState(!cartLoaded);
+
+  // refreshing: true on RETURN visits while a silent background
+  // re-fetch is in progress. Shows a tiny spinner in the header —
+  // the existing cart items stay visible the whole time.
+  const [refreshing, setRefreshing] = useState(false);
+
+  const inc = (itemId, stock) => {
+    setPendingQty(prev => {
+      if (prev[itemId] >= stock) return prev;
+      return { ...prev, [itemId]: prev[itemId] + 1 };
+    });
+  };
+
+  const dec = (itemId) => {
+    setPendingQty(prev => {
+      if (prev[itemId] <= 1) return prev;
+      return { ...prev, [itemId]: prev[itemId] - 1 };
+    });
+  };
+
   const subtotal = cart.reduce((s, i) => s + i.price * (pendingQty[i.itemId] ?? i.quantity), 0);
   const tax = +(subtotal * (setupData?.config?.vat / 100 || 0)).toFixed(2);
   const total = (subtotal + tax).toFixed(2);
-  const fetchCart = async () => { try { setLoading(true); const res = await getCart(); setCart(res.data.items || []); } catch (err) { toast.error(err.message); } finally { setLoading(false); } };
+
+  /* ── Remove / Clear confirm action ───────────────────────────
+     After the mutation, use the shared context fetchCart —
+     no local loading state means no full-screen spinner flash.
+  ─────────────────────────────────────────────────────────────── */
   const handleConfirmAction = async () => {
     try {
-      if (confirmType === "remove") { setLoadingItem(targetId); await removeCart(targetId); }
-      if (confirmType === "clear") { setClearing(true); await clearCart(); }
-      await fetchCart();
-    } catch (err) { toast.error(err.message); } finally { setLoadingItem(null); setClearing(false); setTargetId(null); setConfirmType(null); setviewConfirm(false); }
+      if (confirmType === "remove") {
+        setLoadingItem(targetId);
+        await removeCart(targetId);
+      }
+      if (confirmType === "clear") {
+        setClearing(true);
+        await clearCart();
+      }
+      await fetchCartCtx();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoadingItem(null);
+      setClearing(false);
+      setTargetId(null);
+      setConfirmType(null);
+      setviewConfirm(false);
+    }
   };
+
+  /* ── Save quantity changes ────────────────────────────────────
+     All changed items are sent in PARALLEL via Promise.all
+     instead of one-by-one (was sequential before v1.0.2).
+  ─────────────────────────────────────────────────────────────── */
   const handleSaveChanges = async () => {
     try {
       setDeleting(true);
-      for (const item of cart) { const newQty = pendingQty[item.itemId]; if (newQty !== item.quantity) await updateCart({ itemId: item.itemId, quantity: newQty }); }
-      toast.success("تم حفظ التغييرات"); setHasChanges(false); await fetchCart();
-    } catch (err) { toast.error(err.message); } finally { setDeleting(false); }
+
+      const updates = cart
+        .filter(item => pendingQty[item.itemId] !== undefined && pendingQty[item.itemId] !== item.quantity)
+        .map(item => updateCart({ itemId: item.itemId, quantity: pendingQty[item.itemId] }));
+
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
+
+      toast.success("تم حفظ التغييرات");
+      setHasChanges(false);
+      await fetchCartCtx();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setDeleting(false);
+    }
   };
-  useEffect(() => { const map = {}; cart.forEach(item => { map[item.itemId] = item.quantity; }); setPendingQty(map); }, [cart]);
-  useEffect(() => { setHasChanges(cart.some(item => (pendingQty[item.itemId] ?? item.quantity) !== item.quantity)); }, [pendingQty, cart]);
-  useEffect(() => { if (!user) { router.push('/'); } else { fetchCart(); } }, [user]);
+
+  // Sync pendingQty whenever cart context updates
+  useEffect(() => {
+    const map = {};
+    cart.forEach(item => { map[item.itemId] = item.quantity; });
+    setPendingQty(map);
+  }, [cart]);
+
+  // Recalculate hasChanges whenever quantities or cart changes
+  useEffect(() => {
+    setHasChanges(
+      cart.some(item => (pendingQty[item.itemId] ?? item.quantity) !== item.quantity)
+    );
+  }, [pendingQty, cart]);
+
+  /* ── Smart mount fetch ────────────────────────────────────────
+     FIRST VISIT  (cartLoaded = false):
+       Show full-screen spinner → fetch → render cart.
+
+     RETURN VISIT (cartLoaded = true):
+       Render existing cart from context immediately →
+       fire silent background refresh → update items when done.
+       User never sees a spinner on return visits.
+  ─────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!user) {
+      router.push('/');
+      return;
+    }
+
+    if (!cartLoaded) {
+      // First time — we need the data before we can show anything
+      setPageLoading(true);
+      fetchCartCtx().finally(() => setPageLoading(false));
+    } else {
+      // Already have cart in context — show it instantly, refresh silently
+      setRefreshing(true);
+      fetchCartCtx().finally(() => setRefreshing(false));
+    }
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
   // ── END LOGIC ────────────────────────────────────────────────
 
-  if (loading) return (
+  if (pageLoading) return (
     <div className="flex items-center justify-center w-full h-screen" style={{ background: "var(--bg)" }}>
       <Loader size={32} color="var(--accent)" />
     </div>
@@ -61,9 +168,11 @@ export default function CartPage() {
           style={{ borderBottom: "1px solid var(--border)" }}>
           <div>
             <p className="text-[11px] font-medium tracking-[0.1em] uppercase mb-1.5" style={{ color: "var(--text-subtle)" }}>مراجعة طلبك</p>
-            <h1 className="text-[clamp(24px,4vw,38px)] leading-[1.1] tracking-[-0.01em]"
+            <h1 className="text-[clamp(24px,4vw,38px)] leading-[1.1] tracking-[-0.01em] flex items-center gap-3"
               style={{ fontFamily: "var(--font-display)", color: "var(--text)", fontWeight: 400 }}>
               حقيبة التسوق
+              {/* Silent refresh indicator — tiny, non-blocking */}
+              {refreshing && <Loader size={14} color="var(--text-subtle)" />}
             </h1>
           </div>
           {cart.length > 0 && (
